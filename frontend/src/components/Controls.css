@@ -1,0 +1,59 @@
+/**
+ * NeoBoy - Controls Component Styles
+ */
+
+.controls {
+    display: flex;
+    gap: var(--spacing);
+    align-items: center;
+    padding: var(--spacing);
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.control-group {
+    display: flex;
+    gap: calc(var(--spacing) / 2);
+}
+
+.control-button {
+    padding: 10px 20px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-radius: var(--border-radius);
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.control-button.primary {
+    background: var(--accent);
+    color: white;
+}
+
+.fps-display {
+    padding: 10px 20px;
+    background: var(--bg-primary);
+    border-radius: var(--border-radius);
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 100px;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .controls {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .control-group {
+        width: 100%;
+    }
+
+    .control-button {
+        flex: 1;
+    }
+}

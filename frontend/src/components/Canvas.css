@@ -1,0 +1,33 @@
+/**
+ * NeoBoy - Canvas Component Styles
+ */
+
+.canvas-container {
+    background: var(--bg-secondary);
+    padding: calc(var(--spacing) * 2);
+    border-radius: var(--border-radius);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.emulator-canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    width: 100%;
+    max-width: 720px;
+    height: auto;
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 768px) {
+    .canvas-container {
+        padding: var(--spacing);
+    }
+
+    .emulator-canvas {
+        max-width: 100%;
+    }
+}

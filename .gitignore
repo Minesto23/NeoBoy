@@ -1,0 +1,56 @@
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+dist/
+build/
+frontend/dist/
+frontend/build/
+*.js.map
+*.wasm
+*.wasm.map
+
+# WASM outputs
+frontend/public/wasm/
+
+# ROMs (don't commit)
+*.gb
+*.gbc
+*.gba
+*.rom
+assets/*.gb
+assets/*.gbc
+assets/*.gba
+assets/*.rom
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Temporary files
+tmp/
+temp/
+*.tmp

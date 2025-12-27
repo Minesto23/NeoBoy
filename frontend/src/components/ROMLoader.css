@@ -1,0 +1,60 @@
+/**
+ * NeoBoy - ROM Loader Component Styles
+ */
+
+.rom-loader {
+    margin-top: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 2);
+    background: var(--bg-secondary);
+    border: 2px dashed var(--text-secondary);
+    border-radius: var(--border-radius);
+    text-align: center;
+    transition: all 0.3s ease;
+    min-width: 400px;
+}
+
+.rom-loader.dragging {
+    border-color: var(--accent);
+    background: var(--bg-tertiary);
+    transform: scale(1.02);
+}
+
+.rom-loader-content h3 {
+    margin-bottom: var(--spacing);
+    color: var(--text-primary);
+}
+
+.rom-loader-content p {
+    margin-bottom: calc(var(--spacing) * 1.5);
+    color: var(--text-secondary);
+}
+
+.rom-file-input {
+    display: none;
+}
+
+.rom-file-label {
+    display: inline-block;
+    padding: 12px 32px;
+    background: var(--accent);
+    color: white;
+    border-radius: var(--border-radius);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rom-file-label:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(233, 69, 96, 0.4);
+}
+
+.rom-file-label:active {
+    transform: translateY(0);
+}
+
+@media (max-width: 768px) {
+    .rom-loader {
+        min-width: 100%;
+    }
+}
