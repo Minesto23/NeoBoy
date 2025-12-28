@@ -25,6 +25,16 @@ void gb_mmu_reset(gb_mmu_t *mmu) {
     memset(mmu->hram, 0, sizeof(mmu->hram));
     memset(mmu->io, 0, sizeof(mmu->io));
     mmu->joypad = 0xFF;
+    
+    /* GBC Reset State */
+    mmu->svbk = 0x01;  /* WRAM bank 1 selected by default */
+    mmu->key1 = 0x00;
+    mmu->speed = false; /* Normal speed */
+    mmu->hdma_active = false;
+    
+    if (mmu->ppu) {
+        mmu->ppu->vbk = 0x00; /* VRAM bank 0 selected by default */
+    }
 }
 
 static void request_interrupt(gb_mmu_t *mmu, u8 interrupt) {
@@ -69,9 +79,16 @@ u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr) {
         return gb_cart_read(mmu->cart, addr);
     }
     
-    /* VRAM */
+    /* VRAM (Banked) */
     if (addr >= 0x8000 && addr < 0xA000) {
-        return gb_ppu_read_vram(mmu->ppu, addr - 0x8000);
+        /* Route to PPU with bank info. For now, since gb_ppu_read_vram expects offset from start of VRAM,
+           we need to update it to support banking. But wait, mmu.h struct has array. 
+           Let's handle banking here by calculating the correct offset into the flat 16KB array. */
+        u16 vram_offset = addr - 0x8000;
+        if (mmu->ppu->vbk & 0x01) {
+            vram_offset += 0x2000; /* Bank 1 at offset 8KB */
+        }
+        return mmu->ppu->vram[vram_offset];
     }
     
     /* External RAM (via cartridge) */
@@ -79,14 +96,31 @@ u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr) {
         return gb_cart_read_ram(mmu->cart, addr - 0xA000);
     }
     
-    /* Work RAM */
-    if (addr >= 0xC000 && addr < 0xE000) {
+    /* Work RAM (Bank 0) */
+    if (addr >= 0xC000 && addr < 0xD000) {
         return mmu->wram[addr - 0xC000];
+    }
+    
+    /* Work RAM (Bank 1-7, Switchable) */
+    if (addr >= 0xD000 && addr < 0xE000) {
+        u8 bank = mmu->svbk & 0x07;
+        if (bank == 0) bank = 1; /* Bank 0 is treated as Bank 1 for 0xD000-0xDFFF access */
+        u32 offset = (bank * 0x1000) + (addr - 0xD000);
+        return mmu->wram[offset];
     }
     
     /* Echo RAM (mirror of WRAM) */
     if (addr >= 0xE000 && addr < 0xFE00) {
-        return mmu->wram[addr - 0xE000];
+        /* Echo varies depending on bank, but usually mirrors C000-DDFF. 
+           Let's just map it to WRAM simply for now as standard behavior. */
+        if (addr < 0xF000) { /* Mirror of Bank 0 */
+            return mmu->wram[addr - 0xE000];
+        } else { /* Mirror of Bank N */
+            u8 bank = mmu->svbk & 0x07;
+            if (bank == 0) bank = 1;
+            u32 offset = (bank * 0x1000) + (addr - 0xF000);
+            return mmu->wram[offset];
+        }
     }
     
     /* OAM */
@@ -118,6 +152,18 @@ u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr) {
         if (addr >= 0xFF40 && addr <= 0xFF4B) {
             return gb_ppu_read_reg(mmu->ppu, addr);
         }
+        
+        /* GBC Registers */
+        if (addr == IO_VBK) return mmu->ppu->vbk;
+        if (addr == IO_SVBK) return mmu->svbk;
+        if (addr == IO_KEY1) return mmu->key1 | (mmu->speed ? 0x80 : 0x00);
+        
+        /* Palette Routes */
+        if (addr == IO_BCPS) return mmu->ppu->bcps;
+        if (addr == IO_BCPD) return 0xFF; /* Write only typically, or valid? HW allows read */
+        if (addr == IO_OCPS) return mmu->ppu->ocps;
+        if (addr == IO_OCPD) return 0xFF;
+
         return mmu->io[addr - 0xFF00];
     }
     
@@ -141,9 +187,13 @@ void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value) {
         return;
     }
     
-    /* VRAM */
+    /* VRAM (Banked) */
     if (addr >= 0x8000 && addr < 0xA000) {
-        gb_ppu_write_vram(mmu->ppu, addr - 0x8000, value);
+        u16 vram_offset = addr - 0x8000;
+        if (mmu->ppu->vbk & 0x01) {
+            vram_offset += 0x2000;
+        }
+        mmu->ppu->vram[vram_offset] = value;
         return;
     }
     
@@ -153,15 +203,31 @@ void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value) {
         return;
     }
     
-    /* Work RAM */
-    if (addr >= 0xC000 && addr < 0xE000) {
+    /* Work RAM (Bank 0) */
+    if (addr >= 0xC000 && addr < 0xD000) {
         mmu->wram[addr - 0xC000] = value;
+        return;
+    }
+    
+    /* Work RAM (Switchable Bank 1-7) */
+    if (addr >= 0xD000 && addr < 0xE000) {
+        u8 bank = mmu->svbk & 0x07;
+        if (bank == 0) bank = 1;
+        u32 offset = (bank * 0x1000) + (addr - 0xD000);
+        mmu->wram[offset] = value;
         return;
     }
     
     /* Echo RAM */
     if (addr >= 0xE000 && addr < 0xFE00) {
-        mmu->wram[addr - 0xE000] = value;
+        if (addr < 0xF000) {
+            mmu->wram[addr - 0xE000] = value;
+        } else {
+            u8 bank = mmu->svbk & 0x07;
+            if (bank == 0) bank = 1;
+            u32 offset = (bank * 0x1000) + (addr - 0xF000);
+            mmu->wram[offset] = value;
+        }
         return;
     }
     
@@ -206,6 +272,63 @@ void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value) {
             }
             return;
         }
+        
+        /* GBC Registers */
+        if (addr == IO_VBK) {
+            mmu->ppu->vbk = value & 0x01;
+            /* Bit 0 determines bank (0 or 1) */
+            return;
+        }
+        if (addr == IO_SVBK) {
+            mmu->svbk = value & 0x07;
+            /* Bits 0-2 determine bank (0-7, 0 -> 1) */
+            return;
+        }
+        if (addr == IO_KEY1) {
+            mmu->key1 = (mmu->key1 & 0x80) | (value & 0x01);
+            return;
+        }
+        
+        /* HDMA Registers */
+        if (addr >= IO_HDMA1 && addr <= IO_HDMA5) {
+            if (addr == IO_HDMA1) mmu->hdma1 = value;
+            if (addr == IO_HDMA2) mmu->hdma2 = value;
+            if (addr == IO_HDMA3) mmu->hdma3 = value;
+            if (addr == IO_HDMA4) mmu->hdma4 = value;
+            if (addr == IO_HDMA5) {
+                /* Start HDMA or GDMA */
+                /* Mode 0: GDMA (General Purpose DMA) - Instant transfer */
+                /* Mode 1: HDMA (H-Blank DMA) - 16 bytes per H-Blank */
+                
+                u16 source = (mmu->hdma1 << 8) | (mmu->hdma2 & 0xF0);
+                u16 dest = ((mmu->hdma3 & 0x1F) << 8) | (mmu->hdma4 & 0xF0);
+                dest |= 0x8000; /* Always VRAM */
+                
+                u8 length = (value & 0x7F) + 1; /* Length in 16-byte units */
+                
+                if (value & 0x80) {
+                    /* HDMA (H-Blank) */
+                    mmu->hdma5 = value & 0x7F;
+                    mmu->hdma_active = true;
+                } else {
+                    /* GDMA (General Purpose) */
+                    for (int i = 0; i < length * 16; i++) {
+                        u8 byte = gb_mmu_read(mmu, source + i);
+                        gb_mmu_write(mmu, dest + i, byte);
+                    }
+                    mmu->hdma5 = 0xFF; /* Transfer completed */
+                    mmu->hdma_active = false;
+                }
+            }
+            return;
+        }
+        
+        /* Palette Data handling - Route to PPU helper would be cleaner, but implementing here for now */
+        /* Actually lets route to PPU writes for these */
+        if (addr == IO_BCPS || addr == IO_BCPD || addr == IO_OCPS || addr == IO_OCPD) {
+            gb_ppu_write_reg(mmu->ppu, addr, value);
+            return;
+        }
 
         mmu->io[addr - 0xFF00] = value;
         return;
@@ -233,4 +356,37 @@ u16 gb_mmu_read16(gb_mmu_t *mmu, u16 addr) {
 void gb_mmu_write16(gb_mmu_t *mmu, u16 addr, u16 value) {
     gb_mmu_write(mmu, addr, value & 0xFF);
     gb_mmu_write(mmu, addr + 1, value >> 8);
+}
+
+void gb_mmu_execute_hdma(gb_mmu_t *mmu) {
+    if (!mmu->hdma_active) return;
+    
+    /* Perform 16-byte transfer */
+    u16 source = (mmu->hdma1 << 8) | (mmu->hdma2 & 0xF0);
+    u16 dest = ((mmu->hdma3 & 0x1F) << 8) | (mmu->hdma4 & 0xF0);
+    dest |= 0x8000; /* Always VRAM */
+    
+    for (int i = 0; i < 16; i++) {
+        u8 byte = gb_mmu_read(mmu, source + i);
+        gb_mmu_write(mmu, dest + i, byte);
+    }
+    
+    /* Update source/dest registers */
+    source += 16;
+    dest += 16;
+    
+    mmu->hdma1 = (source >> 8) & 0xFF;
+    mmu->hdma2 = source & 0xF0;
+    mmu->hdma3 = (dest >> 8) & 0x1F;
+    mmu->hdma4 = dest & 0xF0;
+    
+    /* Decrement length (blocks remaining) */
+    mmu->hdma5--;
+    
+    if (mmu->hdma5 == 0xFF) {
+        mmu->hdma_active = false;
+        mmu->hdma5 = 0xFF; /* Completed */
+    } else {
+        mmu->hdma5 &= 0x7F; /* Keep bit 7 clear to indicate ongoing? Or just bits 0-6 */
+    }
 }

@@ -39,7 +39,7 @@ typedef enum {
 
 /* PPU state */
 typedef struct gb_ppu_t {
-    u8 vram[0x2000];      /* 8KB Video RAM */
+    u8 vram[0x4000];      /* 16KB Video RAM (2 banks of 8KB) */
     u8 oam[0xA0];         /* 160 bytes Object Attribute Memory (40 sprites) */
     
     /* LCD Control Register (0xFF40) */
@@ -66,6 +66,19 @@ typedef struct gb_ppu_t {
     /* Window position */
     u8 wy;    /* Window Y (0xFF4A) */
     u8 wx;    /* Window X (0xFF4B) */
+    
+    /* GBC VRAM Banking (0xFF4F) */
+    u8 vbk;
+    
+    /* GBC Palette Memory */
+    u8 cgb_bg_pal[0x40];  /* 64 bytes (8 palettes x 4 colors x 2 bytes) */
+    u8 cgb_obj_pal[0x40]; /* 64 bytes (8 palettes x 4 colors x 2 bytes) */
+    
+    /* GBC Palette Index Registers */
+    u8 bcps; /* 0xFF68 */
+    u8 bcpd; /* 0xFF69 */
+    u8 ocps; /* 0xFF6A */
+    u8 ocpd; /* 0xFF6B */
     
     /* Internal state */
     gb_ppu_mode_t mode;

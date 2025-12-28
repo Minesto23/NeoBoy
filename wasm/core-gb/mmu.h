@@ -29,7 +29,7 @@ struct gb_cartridge_t;
 
 typedef struct gb_mmu_t {
     /* Work RAM */
-    u8 wram[0x2000];  /* 8KB Work RAM */
+    u8 wram[0x8000];  /* 32KB Work RAM (8 banks of 4KB) */
     u8 hram[0x7F];    /* 127 bytes High RAM */
     
     /* I/O Registers array */
@@ -45,6 +45,15 @@ typedef struct gb_mmu_t {
     /* Timer state */
     u16 div_counter;      /* Internal 16-bit counter for DIV */
     u32 tima_counter;     /* Internal counter for TIMA */
+    
+    /* GBC Control */
+    u8 svbk;      /* WRAM Bank (0xFF70) */
+    u8 key1;      /* Speed Switch (0xFF4D) */
+    bool speed;   /* Current speed: 0=Normal, 1=Double */
+    
+    /* GBC HDMA */
+    u8 hdma1, hdma2, hdma3, hdma4, hdma5;
+    bool hdma_active;
 
     /* APU reference */
     struct gb_apu_t *apu;
@@ -53,6 +62,7 @@ typedef struct gb_mmu_t {
     u8 ie;
 } gb_mmu_t;
 
+/* I/O Register addresses */
 /* I/O Register addresses */
 #define IO_JOYP  0xFF00  /* Joypad */
 #define IO_SB    0xFF01  /* Serial transfer data */
@@ -74,6 +84,18 @@ typedef struct gb_mmu_t {
 #define IO_OBP1  0xFF49  /* OBJ palette 1 */
 #define IO_WY    0xFF4A  /* Window Y */
 #define IO_WX    0xFF4B  /* Window X */
+#define IO_KEY1  0xFF4D  /* CGB Speed switch */
+#define IO_VBK   0xFF4F  /* CGB VRAM bank */
+#define IO_HDMA1 0xFF51  /* CGB HDMA1 */
+#define IO_HDMA2 0xFF52  /* CGB HDMA2 */
+#define IO_HDMA3 0xFF53  /* CGB HDMA3 */
+#define IO_HDMA4 0xFF54  /* CGB HDMA4 */
+#define IO_HDMA5 0xFF55  /* CGB HDMA5 */
+#define IO_BCPS  0xFF68  /* CGB BG Palette Index */
+#define IO_BCPD  0xFF69  /* CGB BG Palette Data */
+#define IO_OCPS  0xFF6A  /* CGB OBJ Palette Index */
+#define IO_OCPD  0xFF6B  /* CGB OBJ Palette Data */
+#define IO_SVBK  0xFF70  /* CGB WRAM bank */
 #define IO_IE    0xFFFF  /* Interrupt enable */
 
 /* Function prototypes */
@@ -93,5 +115,10 @@ void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value);
 
 u16 gb_mmu_read16(gb_mmu_t *mmu, u16 addr);
 void gb_mmu_write16(gb_mmu_t *mmu, u16 addr, u16 value);
+
+/**
+ * Execute one step (16 bytes) of HDMA transfer
+ */
+void gb_mmu_execute_hdma(gb_mmu_t *mmu);
 
 #endif /* GB_MMU_H */

@@ -36,6 +36,7 @@ typedef struct gb_cpu_t {
     bool ei_delay; /* EI delay flag (enables IME after next instruction) */
     bool halted;  /* CPU halted state */
     bool stopped; /* CPU stopped state */
+    bool halt_bug; /* CPU halt bug state */
     
     u64 cycles;   /* Total cycles executed */
 } gb_cpu_t;

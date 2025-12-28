@@ -53,6 +53,7 @@ typedef struct gb_cartridge_t {
     u8 rtc_latch[5];      /* Latched RTC values */
     bool rtc_latched;     /* RTC latch flag */
     u64 rtc_base_time;    /* Base time for RTC emulation */
+    u64 rtc_cycles;       /* Accumulator for RTC ticking */
 
     /* MBC5 specific */
     u16 rom_bank_9bit;    /* MBC5 uses 9 bits for ROM banking */
@@ -98,5 +99,11 @@ void gb_cart_write_ram(gb_cartridge_t *cart, u16 addr, u8 value);
  * Free cartridge resources
  */
 void gb_cart_destroy(gb_cartridge_t *cart);
+
+/**
+ * Step cartridge emulation (e.g. RTC)
+ * @param cycles Number of CPU cycles to advance
+ */
+void gb_cart_step(gb_cartridge_t *cart, u32 cycles);
 
 #endif /* GB_CARTRIDGE_H */

@@ -39,6 +39,7 @@ void gb_cpu_init(gb_cpu_t *cpu) {
     cpu->ei_delay = false;
     cpu->halted = false;
     cpu->stopped = false;
+    cpu->halt_bug = false;
     cpu->cycles = 0;
 }
 
@@ -223,6 +224,39 @@ static void cb_bit(gb_cpu_t *cpu, u8 bit, u8 val) {
     else CPU_CLEAR_FLAG(cpu, FLAG_Z);
 }
 
+/* Standard Rotations (Accumulator) */
+
+static void cpu_rlca(gb_cpu_t *cpu) {
+    u8 carry = (cpu->a & 0x80) >> 7;
+    cpu->a = (cpu->a << 1) | carry;
+    cpu->f = 0;
+    if (carry) CPU_SET_FLAG(cpu, FLAG_C);
+    // Z flag is ALWAYS cleared for RLCA/RRCA/RLA/RRA
+}
+
+static void cpu_rrca(gb_cpu_t *cpu) {
+    u8 carry = cpu->a & 0x01;
+    cpu->a = (cpu->a >> 1) | (carry << 7);
+    cpu->f = 0;
+    if (carry) CPU_SET_FLAG(cpu, FLAG_C);
+}
+
+static void cpu_rla(gb_cpu_t *cpu) {
+    u8 old_carry = CPU_GET_FLAG(cpu, FLAG_C);
+    u8 new_carry = (cpu->a & 0x80) >> 7;
+    cpu->a = (cpu->a << 1) | old_carry;
+    cpu->f = 0;
+    if (new_carry) CPU_SET_FLAG(cpu, FLAG_C);
+}
+
+static void cpu_rra(gb_cpu_t *cpu) {
+    u8 old_carry = CPU_GET_FLAG(cpu, FLAG_C);
+    u8 new_carry = cpu->a & 0x01;
+    cpu->a = (cpu->a >> 1) | (old_carry << 7);
+    cpu->f = 0;
+    if (new_carry) CPU_SET_FLAG(cpu, FLAG_C);
+}
+
 static u32 gb_cpu_execute_cb(gb_cpu_t *cpu, gb_mmu_t *mmu) {
     u8 opcode = fetch_u8(cpu, mmu);
     u8 *reg = NULL;
@@ -263,18 +297,35 @@ static u32 gb_cpu_execute_cb(gb_cpu_t *cpu, gb_mmu_t *mmu) {
         gb_mmu_write(mmu, hl, hl_val);
     }
     
-    /* Cycle correction for HL */
+    /* Cycle correction */
     if (is_hl) {
-        if ((opcode & 0xC0) == 0x40) return 8; /* BIT (HL) extra cycles (4 + 8) */
-        return 12; /* Others extra cycles (4 + 12) */
+        // BIT (HL) is 12 cycles (4 fetch + 8 exec)
+        // Others (HL) are 16 cycles (4 fetch + 12 exec) 
+        // gb_cpu_step adds 4 base cycles.
+        if ((opcode & 0xC0) == 0x40) return 8; // BIT (HL) -> Total 12
+        return 12; // Others (HL) -> Total 16
     }
 
-    return 4; // Register operations (4 + 4)
+    // Register CB ops are 8 cycles total (4 fetch + 4 exec)
+    return 4; 
 }
 
 u32 gb_cpu_step(gb_cpu_t *cpu, void *mmu_ptr) {
     gb_mmu_t *mmu = (gb_mmu_t *)mmu_ptr;
     
+    /* Handle suspended states */
+    if (cpu->stopped) {
+        // STOP state is exited by a joypad interrupt (high-to-low transition on P1 bits)
+        // For now, we'll implement a simple check: if any button is pressed (joypad interrupt pending), wake up.
+        // In reality, it doesn't even need the interrupt enabled in IE, just the signal.
+        u8 if_reg = gb_mmu_read(mmu, 0xFF0F);
+        if (if_reg & 0x10) { // Joypad interrupt bit
+             cpu->stopped = false;
+        } else {
+             return 4; // Burn cycles while stopped
+        }
+    }
+
     /* Handle halted state */
     if (cpu->halted) {
         u8 ie = gb_mmu_read(mmu, 0xFFFF);
@@ -295,11 +346,13 @@ u32 gb_cpu_step(gb_cpu_t *cpu, void *mmu_ptr) {
     u16 old_pc = cpu->pc;
     u8 opcode = fetch_u8(cpu, mmu);
     
-    /* Halt bug */
-    u8 ie = gb_mmu_read(mmu, 0xFFFF);
-    u8 if_reg = gb_mmu_read(mmu, 0xFF0F);
-    if (!cpu->ime && (ie & if_reg) && opcode != 0x76) {
-        cpu->pc = old_pc; /* Reprocess the same PC next fetch */
+    /* Halt bug:
+     * If halt_bug triggered, the PC fails to increment for one instruction fetch.
+     * Effectively, we re-execute the byte at the current PC.
+     */
+    if (cpu->halt_bug) {
+        cpu->pc = old_pc;
+        cpu->halt_bug = false;
     }
 
     u32 cycles = 4;
@@ -769,7 +822,9 @@ u32 gb_cpu_step(gb_cpu_t *cpu, void *mmu_ptr) {
         case 0xE7: push16(cpu, mmu, cpu->pc); cpu->pc = 0x20; cycles = 16; break;
         case 0xEF: push16(cpu, mmu, cpu->pc); cpu->pc = 0x28; cycles = 16; break;
         case 0xF7: push16(cpu, mmu, cpu->pc); cpu->pc = 0x30; cycles = 16; break;
-        case 0xFF: push16(cpu, mmu, cpu->pc); cpu->pc = 0x38; cycles = 16; break;
+        case 0xFF: 
+            printf("[CRASH DETECTED] Executing RST 38 (0xFF) at PC: 0x%04X\n", old_pc);
+            push16(cpu, mmu, cpu->pc); cpu->pc = 0x38; cycles = 16; break;
 
         /* --- Miscellaneous --- */
 
@@ -799,7 +854,19 @@ u32 gb_cpu_step(gb_cpu_t *cpu, void *mmu_ptr) {
         case 0x37: CPU_CLEAR_FLAG(cpu, FLAG_N); CPU_CLEAR_FLAG(cpu, FLAG_H); CPU_SET_FLAG(cpu, FLAG_C); cycles = 4; break; // SCF
         case 0x3F: CPU_CLEAR_FLAG(cpu, FLAG_N); CPU_CLEAR_FLAG(cpu, FLAG_H); if (CPU_GET_FLAG(cpu, FLAG_C)) CPU_CLEAR_FLAG(cpu, FLAG_C); else CPU_SET_FLAG(cpu, FLAG_C); cycles = 4; break; // CCF
 
-        case 0x76: cpu->halted = true; cycles = 4; break; // HALT
+        case 0x76: // HALT
+        {
+            u8 ie = gb_mmu_read(mmu, 0xFFFF);
+            u8 if_reg = gb_mmu_read(mmu, 0xFF0F);
+            if (!cpu->ime && (ie & if_reg & 0x1F)) {
+                // HALT bug: HALT mode not entered, next instruction executed twice
+                cpu->halt_bug = true;
+            } else {
+                cpu->halted = true;
+            }
+            cycles = 4;
+            break;
+        }
         case 0x10: cpu->stopped = true; fetch_u8(cpu, mmu); cycles = 4; break; // STOP
         case 0xF3: cpu->ime = false; cpu->ei_delay = false; cycles = 4; break; // DI
         case 0xFB: cpu->ei_delay = true; cycles = 4; break; // EI

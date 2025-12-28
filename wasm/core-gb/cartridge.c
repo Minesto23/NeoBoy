@@ -249,6 +249,52 @@ void gb_cart_write_ram(gb_cartridge_t *cart, u16 addr, u8 value) {
     }
 }
 
+void gb_cart_step(gb_cartridge_t *cart, u32 cycles) {
+    if (!cart || cart->mbc_type != MBC3) return;
+
+    /* Check if RTC is active (Bit 6 of DH set?) 
+       Actually, Bit 6 of DH is "Halt Flag". 0 = Active, 1 = Halt. 
+    */
+    if (cart->rtc_regs[4] & 0x40) return;
+
+    cart->rtc_cycles += cycles;
+    
+    /* Game Boy CPU is 4.194304 MHz */
+    /* Trigger every 4194304 cycles (1 second) */
+    while (cart->rtc_cycles >= 4194304) {
+        cart->rtc_cycles -= 4194304;
+        
+        /* Tick RTC */
+        cart->rtc_regs[0]++; /* Seconds */
+        if (cart->rtc_regs[0] >= 60) {
+            cart->rtc_regs[0] = 0;
+            cart->rtc_regs[1]++; /* Minutes */
+            if (cart->rtc_regs[1] >= 60) {
+                cart->rtc_regs[1] = 0;
+                cart->rtc_regs[2]++; /* Hours */
+                if (cart->rtc_regs[2] >= 24) {
+                    cart->rtc_regs[2] = 0;
+                    
+                    /* Days (9 bits total) */
+                    u16 days = cart->rtc_regs[3] | ((cart->rtc_regs[4] & 0x01) << 8);
+                    days++;
+                    
+                    cart->rtc_regs[3] = days & 0xFF;
+                    cart->rtc_regs[4] = (cart->rtc_regs[4] & 0xFE) | ((days >> 8) & 0x01);
+                    
+                    if (days > 0x1FF) {
+                        /* Overflow (Bit 7 of DH is Carry Flag) */
+                        cart->rtc_regs[4] |= 0x80;
+                        /* Wrap days to 0 */
+                        cart->rtc_regs[3] = 0;
+                        cart->rtc_regs[4] &= ~0x01;
+                    }
+                }
+            }
+        }
+    }
+}
+
 void gb_cart_destroy(gb_cartridge_t *cart) {
     if (!cart) return;
     if (cart->rom) free(cart->rom);
