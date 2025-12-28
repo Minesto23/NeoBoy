@@ -58,22 +58,7 @@ int mmu_load_rom(const uint8_t* data, uint32_t size) {
     return 0;
 }
 
-uint32_t mmu_read32(uint32_t address) {
-    // Combine 4 bytes into 32-bit value (little-endian)
-    uint32_t value = 0;
-    value |= mmu_read8(address + 0) << 0;
-    value |= mmu_read8(address + 1) << 8;
-    value |= mmu_read8(address + 2) << 16;
-    value |= mmu_read8(address + 3) << 24;
-    return value;
-}
-
-uint16_t mmu_read16(uint32_t address) {
-    uint16_t value = 0;
-    value |= mmu_read8(address + 0) << 0;
-    value |= mmu_read8(address + 1) << 8;
-    return value;
-}
+void mmu_write8(uint32_t address, uint8_t value);
 
 uint8_t mmu_read8(uint32_t address) {
     // BIOS
@@ -119,16 +104,21 @@ uint8_t mmu_read8(uint32_t address) {
     return 0;
 }
 
-void mmu_write32(uint32_t address, uint32_t value) {
-    mmu_write8(address + 0, (value >> 0) & 0xFF);
-    mmu_write8(address + 1, (value >> 8) & 0xFF);
-    mmu_write8(address + 2, (value >> 16) & 0xFF);
-    mmu_write8(address + 3, (value >> 24) & 0xFF);
+uint32_t mmu_read32(uint32_t address) {
+    // Combine 4 bytes into 32-bit value (little-endian)
+    uint32_t value = 0;
+    value |= mmu_read8(address + 0) << 0;
+    value |= mmu_read8(address + 1) << 8;
+    value |= mmu_read8(address + 2) << 16;
+    value |= mmu_read8(address + 3) << 24;
+    return value;
 }
 
-void mmu_write16(uint32_t address, uint16_t value) {
-    mmu_write8(address + 0, (value >> 0) & 0xFF);
-    mmu_write8(address + 1, (value >> 8) & 0xFF);
+uint16_t mmu_read16(uint32_t address) {
+    uint16_t value = 0;
+    value |= mmu_read8(address + 0) << 0;
+    value |= mmu_read8(address + 1) << 8;
+    return value;
 }
 
 void mmu_write8(uint32_t address, uint8_t value) {
@@ -164,6 +154,18 @@ void mmu_write8(uint32_t address, uint8_t value) {
     else if (address >= 0x0E000000 && address < 0x0E010000) {
         sram[address - 0x0E000000] = value;
     }
+}
+
+void mmu_write32(uint32_t address, uint32_t value) {
+    mmu_write8(address + 0, (value >> 0) & 0xFF);
+    mmu_write8(address + 1, (value >> 8) & 0xFF);
+    mmu_write8(address + 2, (value >> 16) & 0xFF);
+    mmu_write8(address + 3, (value >> 24) & 0xFF);
+}
+
+void mmu_write16(uint32_t address, uint16_t value) {
+    mmu_write8(address + 0, (value >> 0) & 0xFF);
+    mmu_write8(address + 1, (value >> 8) & 0xFF);
 }
 
 void mmu_destroy(void) {

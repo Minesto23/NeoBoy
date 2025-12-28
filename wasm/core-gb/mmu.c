@@ -1,175 +1,145 @@
 /**
- * NeoBoy - Game Boy Memory Management Unit (MMU)
+ * NeoBoy - Game Boy MMU Implementation
  * 
- * Memory Map:
- * 0x0000-0x3FFF: ROM Bank 0 (16KB)
- * 0x4000-0x7FFF: ROM Bank N (switchable, 16KB)
- * 0x8000-0x9FFF: Video RAM (8KB)
- * 0xA000-0xBFFF: External RAM (8KB, from cartridge)
- * 0xC000-0xDFFF: Work RAM (8KB)
- * 0xE000-0xFDFF: Echo RAM (mirror of 0xC000-0xDDFF)
- * 0xFE00-0xFE9F: OAM (Object Attribute Memory)
- * 0xFEA0-0xFEFF: Unusable
- * 0xFF00-0xFF7F: I/O Registers
- * 0xFF80-0xFFFE: High RAM (HRAM)
- * 0xFFFF: Interrupt Enable Register
+ * Purpose: Memory access routing and I/O register handling
  */
 
-#include "core.h"
-#include <stdlib.h>
+#include "mmu.h"
+#include "ppu.h"
+#include "cartridge.h"
 #include <string.h>
 
-// Memory regions
-static uint8_t* rom_bank0;           // 0x0000-0x3FFF (16KB)
-static uint8_t* rom_bank_n;          // 0x4000-0x7FFF (16KB, switchable)
-static uint8_t vram[0x2000];         // 0x8000-0x9FFF (8KB)
-static uint8_t* external_ram;        // 0xA000-0xBFFF (8KB max)
-static uint8_t wram[0x2000];         // 0xC000-0xDFFF (8KB)
-static uint8_t oam[0xA0];            // 0xFE00-0xFE9F (160 bytes)
-static uint8_t io_registers[0x80];   // 0xFF00-0xFF7F
-static uint8_t hram[0x7F];           // 0xFF80-0xFFFE
-static uint8_t interrupt_enable;     // 0xFFFF
-
-static uint8_t* rom_data = NULL;
-static uint32_t rom_size = 0;
-static int current_rom_bank = 1;
-
-void mmu_init(void) {
-    memset(vram, 0, sizeof(vram));
-    memset(wram, 0, sizeof(wram));
-    memset(oam, 0, sizeof(oam));
-    memset(io_registers, 0, sizeof(io_registers));
-    memset(hram, 0, sizeof(hram));
-    interrupt_enable = 0;
-    current_rom_bank = 1;
+void gb_mmu_init(gb_mmu_t *mmu, gb_ppu_t *ppu, gb_cartridge_t *cart) {
+    memset(mmu, 0, sizeof(gb_mmu_t));
+    mmu->ppu = ppu;
+    mmu->cart = cart;
+    mmu->joypad = 0xFF;
 }
 
-int mmu_load_rom(const uint8_t* data, uint32_t size) {
-    if (data == NULL || size < 0x8000) {
-        return -1;  // Invalid ROM
-    }
-    
-    // Free previous ROM if exists
-    if (rom_data != NULL) {
-        free(rom_data);
-    }
-    
-    // Allocate and copy ROM data
-    rom_data = (uint8_t*)malloc(size);
-    if (rom_data == NULL) {
-        return -1;
-    }
-    
-    memcpy(rom_data, data, size);
-    rom_size = size;
-    
-    // Set up bank pointers
-    rom_bank0 = rom_data;
-    rom_bank_n = rom_data + 0x4000;
-    
-    return 0;
+void gb_mmu_reset(gb_mmu_t *mmu) {
+    memset(mmu->wram, 0, sizeof(mmu->wram));
+    memset(mmu->hram, 0, sizeof(mmu->hram));
+    memset(mmu->io, 0, sizeof(mmu->io));
+    mmu->joypad = 0xFF;
 }
 
-uint8_t mmu_read(uint16_t address) {
-    // ROM Bank 0
-    if (address < 0x4000) {
-        return rom_bank0 ? rom_bank0[address] : 0xFF;
+u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr) {
+    /* ROM Banks (via cartridge) */
+    if (addr < 0x8000) {
+        return gb_cart_read(mmu->cart, addr);
     }
-    // ROM Bank N
-    else if (address < 0x8000) {
-        return rom_bank_n ? rom_bank_n[address - 0x4000] : 0xFF;
+    
+    /* VRAM */
+    if (addr >= 0x8000 && addr < 0xA000) {
+        return gb_ppu_read_vram(mmu->ppu, addr - 0x8000);
     }
-    // VRAM
-    else if (address < 0xA000) {
-        return vram[address - 0x8000];
+    
+    /* External RAM (via cartridge) */
+    if (addr >= 0xA000 && addr < 0xC000) {
+        return gb_cart_read_ram(mmu->cart, addr - 0xA000);
     }
-    // External RAM
-    else if (address < 0xC000) {
-        return external_ram ? external_ram[address - 0xA000] : 0xFF;
+    
+    /* Work RAM */
+    if (addr >= 0xC000 && addr < 0xE000) {
+        return mmu->wram[addr - 0xC000];
     }
-    // WRAM
-    else if (address < 0xE000) {
-        return wram[address - 0xC000];
+    
+    /* Echo RAM (mirror of WRAM) */
+    if (addr >= 0xE000 && addr < 0xFE00) {
+        return mmu->wram[addr - 0xE000];
     }
-    // Echo RAM
-    else if (address < 0xFE00) {
-        return wram[address - 0xE000];
+    
+    /* OAM */
+    if (addr >= 0xFE00 && addr < 0xFEA0) {
+        return gb_ppu_read_oam(mmu->ppu, addr - 0xFE00);
     }
-    // OAM
-    else if (address < 0xFEA0) {
-        return oam[address - 0xFE00];
-    }
-    // Unusable
-    else if (address < 0xFF00) {
+    
+    /* Unusable area */
+    if (addr >= 0xFEA0 && addr < 0xFF00) {
         return 0xFF;
     }
-    // I/O Registers
-    else if (address < 0xFF80) {
-        return io_registers[address - 0xFF00];
+    
+    /* I/O Registers */
+    if (addr >= 0xFF00 && addr < 0xFF80) {
+        return mmu->io[addr - 0xFF00];
     }
-    // HRAM
-    else if (address < 0xFFFF) {
-        return hram[address - 0xFF80];
+    
+    /* High RAM */
+    if (addr >= 0xFF80 && addr < 0xFFFF) {
+        return mmu->hram[addr - 0xFF80];
     }
-    // Interrupt Enable
-    else {
-        return interrupt_enable;
+    
+    /* Interrupt Enable */
+    if (addr == 0xFFFF) {
+        return mmu->io[0x7F];
     }
+    
+    return 0xFF;
 }
 
-void mmu_write(uint16_t address, uint8_t value) {
-    // ROM (MBC writes - banking control)
-    if (address < 0x8000) {
-        // TODO: Handle MBC (Memory Bank Controller) writes
+void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value) {
+    /* ROM Banks (may trigger MBC commands) */
+    if (addr < 0x8000) {
+        gb_cart_write(mmu->cart, addr, value);
         return;
     }
-    // VRAM
-    else if (address < 0xA000) {
-        vram[address - 0x8000] = value;
-    }
-    // External RAM
-    else if (address < 0xC000) {
-        if (external_ram) {
-            external_ram[address - 0xA000] = value;
-        }
-    }
-    // WRAM
-    else if (address < 0xE000) {
-        wram[address - 0xC000] = value;
-    }
-    // Echo RAM
-    else if (address < 0xFE00) {
-        wram[address - 0xE000] = value;
-    }
-    // OAM
-    else if (address < 0xFEA0) {
-        oam[address - 0xFE00] = value;
-    }
-    // Unusable
-    else if (address < 0xFF00) {
+    
+    /* VRAM */
+    if (addr >= 0x8000 && addr < 0xA000) {
+        gb_ppu_write_vram(mmu->ppu, addr - 0x8000, value);
         return;
     }
-    // I/O Registers
-    else if (address < 0xFF80) {
-        io_registers[address - 0xFF00] = value;
+    
+    /* External RAM */
+    if (addr >= 0xA000 && addr < 0xC000) {
+        gb_cart_write_ram(mmu->cart, addr - 0xA000, value);
+        return;
     }
-    // HRAM
-    else if (address < 0xFFFF) {
-        hram[address - 0xFF80] = value;
+    
+    /* Work RAM */
+    if (addr >= 0xC000 && addr < 0xE000) {
+        mmu->wram[addr - 0xC000] = value;
+        return;
     }
-    // Interrupt Enable
-    else {
-        interrupt_enable = value;
+    
+    /* Echo RAM */
+    if (addr >= 0xE000 && addr < 0xFE00) {
+        mmu->wram[addr - 0xE000] = value;
+        return;
+    }
+    
+    /* OAM */
+    if (addr >= 0xFE00 && addr < 0xFEA0) {
+        gb_ppu_write_oam(mmu->ppu, addr - 0xFE00, value);
+        return;
+    }
+    
+    /* I/O Registers */
+    if (addr >= 0xFF00 && addr < 0xFF80) {
+        mmu->io[addr - 0xFF00] = value;
+        return;
+    }
+    
+    /* High RAM */
+    if (addr >= 0xFF80 && addr < 0xFFFF) {
+        mmu->hram[addr - 0xFF80] = value;
+        return;
+    }
+    
+    /* Interrupt Enable */
+    if (addr == 0xFFFF) {
+        mmu->io[0x7F] = value;
+        return;
     }
 }
 
-void mmu_destroy(void) {
-    if (rom_data != NULL) {
-        free(rom_data);
-        rom_data = NULL;
-    }
+u16 gb_mmu_read16(gb_mmu_t *mmu, u16 addr) {
+    u8 lo = gb_mmu_read(mmu, addr);
+    u8 hi = gb_mmu_read(mmu, addr + 1);
+    return (hi << 8) | lo;
 }
 
-// TODO: Implement MBC (Memory Bank Controller) support
-// - MBC1, MBC2, MBC3, MBC5
-// - ROM and RAM banking
+void gb_mmu_write16(gb_mmu_t *mmu, u16 addr, u16 value) {
+    gb_mmu_write(mmu, addr, value & 0xFF);
+    gb_mmu_write(mmu, addr + 1, value >> 8);
+}

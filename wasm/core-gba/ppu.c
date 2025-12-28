@@ -55,6 +55,21 @@ static void set_pixel(int x, int y, uint16_t color) {
     framebuffer[index + 3] = 0xFF;
 }
 
+/**
+ * Render a scanline based on current display mode
+ */
+void ppu_render_scanline(void) {
+    int bg_mode = ppu.dispcnt & 0x07;
+    int y = ppu.scanline;
+    
+    // Placeholder: render white screen
+    for (int x = 0; x < GBA_SCREEN_WIDTH; x++) {
+        set_pixel(x, y, 0x7FFF);  // White
+    }
+    
+    // TODO: Implement rendering for each mode
+}
+
 void ppu_step(int cycles) {
     ppu.cycles += cycles;
     
@@ -77,21 +92,6 @@ void ppu_step(int cycles) {
             ppu.scanline = 0;
         }
     }
-}
-
-/**
- * Render a scanline based on current display mode
- */
-void ppu_render_scanline(void) {
-    int bg_mode = ppu.dispcnt & 0x07;
-    int y = ppu.scanline;
-    
-    // Placeholder: render white screen
-    for (int x = 0; x < GBA_SCREEN_WIDTH; x++) {
-        set_pixel(x, y, 0x7FFF);  // White
-    }
-    
-    // TODO: Implement rendering for each mode
 }
 
 uint8_t* ppu_get_framebuffer(void) {

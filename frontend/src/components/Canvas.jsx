@@ -5,7 +5,9 @@
  * Automatically scales to appropriate resolution based on core type
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
+import { useAnimationFrame } from '../hooks/useAnimationFrame';
+import { FramebufferManager } from '../wasm/framebufferManager';
 import './Canvas.css';
 
 const CORE_RESOLUTIONS = {
@@ -14,49 +16,43 @@ const CORE_RESOLUTIONS = {
     gba: { width: 240, height: 160 }
 };
 
-function Canvas({ wasmInstance, coreType, isRunning }) {
+function Canvas({ wasmCore, coreType, isRunning, onFPSUpdate }) {
     const canvasRef = useRef(null);
-    const frameRef = useRef(null);
-
     const resolution = CORE_RESOLUTIONS[coreType];
 
+    // Initialize framebuffer manager
+    const fbManager = useMemo(() => {
+        return new FramebufferManager(resolution.width, resolution.height);
+    }, [resolution.width, resolution.height]);
+
     /**
-     * Render framebuffer to canvas
+     * Main rendering step
      */
-    const renderFrame = () => {
-        if (!canvasRef.current || !wasmInstance.current) {
+    const renderStep = () => {
+        if (!canvasRef.current || !wasmCore || !isRunning) {
             return;
         }
 
+        // Step the emulator frame
+        wasmCore.step();
+
+        // Get framebuffer and draw to canvas
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
 
-        // TODO: Get framebuffer from WASM
-        // const framebuffer = wasmInstance.current.get_framebuffer();
-        // const imageData = new ImageData(
-        //   new Uint8ClampedArray(framebuffer),
-        //   resolution.width,
-        //   resolution.height
-        // );
-
-        // Placeholder: render a test pattern
-        const imageData = ctx.createImageData(resolution.width, resolution.height);
-        for (let i = 0; i < imageData.data.length; i += 4) {
-            imageData.data[i + 0] = 224;  // R
-            imageData.data[i + 1] = 248;  // G
-            imageData.data[i + 2] = 208;  // B
-            imageData.data[i + 3] = 255;  // A
-        }
-
+        const imageData = wasmCore.getFramebufferImageData(resolution.width, resolution.height);
         ctx.putImageData(imageData, 0, 0);
     };
 
+    // Use optimized animation frame hook
+    const { fps } = useAnimationFrame(renderStep, isRunning);
+
+    // Report FPS back to parent if needed
     useEffect(() => {
-        if (isRunning) {
-            const interval = setInterval(renderFrame, 16); // ~60 FPS
-            return () => clearInterval(interval);
+        if (onFPSUpdate) {
+            onFPSUpdate(fps);
         }
-    }, [isRunning, wasmInstance, coreType]);
+    }, [fps, onFPSUpdate]);
 
     return (
         <div className="canvas-container">
@@ -65,6 +61,12 @@ function Canvas({ wasmInstance, coreType, isRunning }) {
                 width={resolution.width}
                 height={resolution.height}
                 className="emulator-canvas"
+                style={{
+                    imageRendering: 'pixelated',
+                    width: '100%',
+                    height: 'auto',
+                    maxWidth: `${resolution.width * 6}px`
+                }}
             />
         </div>
     );

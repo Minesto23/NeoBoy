@@ -21,24 +21,20 @@ const KEY_MAPPING = {
     'KeyS': 9         // R (GBA)
 };
 
-export function useInput(wasmInstance) {
+export function useInput(wasmCore) {
     useEffect(() => {
         const handleKeyDown = (event) => {
             const button = KEY_MAPPING[event.code];
-            if (button !== undefined && wasmInstance.current) {
-                // TODO: Call WASM set_button(button, true)
-                // wasmInstance.current.set_button(button, true);
-                console.log(`Button ${button} pressed`);
+            if (button !== undefined && wasmCore) {
+                wasmCore.setButtonState(button, true);
                 event.preventDefault();
             }
         };
 
         const handleKeyUp = (event) => {
             const button = KEY_MAPPING[event.code];
-            if (button !== undefined && wasmInstance.current) {
-                // TODO: Call WASM set_button(button, false)
-                // wasmInstance.current.set_button(button, false);
-                console.log(`Button ${button} released`);
+            if (button !== undefined && wasmCore) {
+                wasmCore.setButtonState(button, false);
                 event.preventDefault();
             }
         };
@@ -52,12 +48,6 @@ export function useInput(wasmInstance) {
             for (let i = 0; i < gamepads.length; i++) {
                 const gamepad = gamepads[i];
                 if (!gamepad) continue;
-
-                // Map gamepad buttons to emulator buttons
-                // Standard gamepad mapping:
-                // 0: A, 1: B, 8: Select, 9: Start
-                // 12: Up, 13: Down, 14: Left, 15: Right
-                // 4: L, 5: R
 
                 const buttonMap = {
                     0: 0,   // A
@@ -73,8 +63,10 @@ export function useInput(wasmInstance) {
                 };
 
                 for (const [gpButton, emuButton] of Object.entries(buttonMap)) {
-                    if (gamepad.buttons[gpButton]?.pressed) {
-                        // TODO: Call WASM set_button(emuButton, true)
+                    if (gamepad.buttons[gpButton]?.pressed && wasmCore) {
+                        wasmCore.setButtonState(emuButton, true);
+                    } else if (wasmCore) {
+                        wasmCore.setButtonState(emuButton, false);
                     }
                 }
             }
@@ -92,5 +84,5 @@ export function useInput(wasmInstance) {
             window.removeEventListener('keyup', handleKeyUp);
             clearInterval(gamepadInterval);
         };
-    }, [wasmInstance]);
+    }, [wasmCore]);
 }

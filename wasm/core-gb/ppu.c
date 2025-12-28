@@ -1,128 +1,207 @@
 /**
- * NeoBoy - Game Boy Pixel Processing Unit (PPU)
+ * NeoBoy - Game Boy PPU Implementation
  * 
- * Handles rendering of graphics
- * - 160x144 pixel display
- * - 4 shades of gray (2-bit color)
- * - Background, Window, and Sprite layers
- * - Scanline-based rendering
+ * Purpose: Graphics rendering and LCD control
  * 
- * PPU Modes:
- * - Mode 0: HBlank
- * - Mode 1: VBlank
- * - Mode 2: OAM Search
- * - Mode 3: Drawing
+ * PLACEHOLDER: This implementation provides the basic structure but needs:
+ * - Tile fetcher and pixel FIFO
+ * - Sprite rendering with priority
+ * - Window layer rendering
+ * - Accurate timing and mode transitions
+ * - STAT interrupt generation
  */
 
-#include "core.h"
+#include "ppu.h"
 #include <string.h>
+#include <stdio.h>
 
-// Framebuffer (RGBA format for web display)
-static uint8_t framebuffer[GB_FRAMEBUFFER_SIZE];
-
-// PPU state
-typedef struct {
-    int mode;
-    int scanline;
-    int cycles;
-} PPU;
-
-static PPU ppu;
-
-// DMG palette (4 shades of green-tinted gray)
-static const uint32_t DMG_PALETTE[4] = {
-    0xFFE0F8D0,  // Lightest (white)
-    0xFF88C070,  // Light gray
-    0xFF346856,  // Dark gray
-    0xFF081820   // Darkest (black)
+/* Default monochrome palette (darkest to lightest) */
+static const u32 default_palette[4] = {
+    0xFF0F380F,  /* Color 0: Darkest green */
+    0xFF0E6C28,  /* Color 1: Dark green */
+    0xFF2A9A39,  /* Color 2: Light green */
+    0xFF8BBE53   /* Color 3: Lightest green */
 };
 
-void ppu_init(void) {
-    memset(&ppu, 0, sizeof(PPU));
-    memset(framebuffer, 0, sizeof(framebuffer));
-    ppu.mode = 2;  // Start in OAM search
-}
-
-void ppu_reset(void) {
-    ppu_init();
-}
-
-/**
- * Step PPU by a given number of cycles
- */
-void ppu_step(int cycles) {
-    ppu.cycles += cycles;
+void gb_ppu_init(gb_ppu_t *ppu) {
+    memset(ppu, 0, sizeof(gb_ppu_t));
     
-    switch (ppu.mode) {
-        case 2:  // OAM Search (80 cycles)
-            if (ppu.cycles >= 80) {
-                ppu.cycles -= 80;
-                ppu.mode = 3;  // Switch to Drawing
+    /* Default register values */
+    ppu->lcdc = 0x91;
+    ppu->stat = 0x00;
+    ppu->bgp = 0xFC;
+    ppu->obp0 = 0xFF;
+    ppu->obp1 = 0xFF;
+    
+    ppu->mode = PPU_MODE_OAM_SCAN;
+    ppu->mode_cycles = 0;
+    
+    /* Clear framebuffer to black */
+    for (u32 i = 0; i < sizeof(ppu->framebuffer); i += 4) {
+        ppu->framebuffer[i + 0] = 0x00;
+        ppu->framebuffer[i + 1] = 0x00;
+        ppu->framebuffer[i + 2] = 0x00;
+        ppu->framebuffer[i + 3] = 0xFF;
+    }
+}
+
+void gb_ppu_reset(gb_ppu_t *ppu) {
+    gb_ppu_init(ppu);
+}
+
+bool gb_ppu_step(gb_ppu_t *ppu, u32 cycles) {
+    if (!(ppu->lcdc & LCDC_ENABLE)) {
+        return false;
+    }
+    
+    ppu->mode_cycles += cycles;
+    bool frame_complete = false;
+    
+    /*
+     * PLACEHOLDER: Simplified mode state machine
+     * Real implementation needs accurate cycle timing
+     */
+    switch (ppu->mode) {
+        case PPU_MODE_OAM_SCAN:
+            if (ppu->mode_cycles >= 80) {
+                ppu->mode = PPU_MODE_DRAWING;
+                ppu->mode_cycles -= 80;
             }
             break;
             
-        case 3:  // Drawing (172 cycles)
-            if (ppu.cycles >= 172) {
-                ppu.cycles -= 172;
-                ppu.mode = 0;  // Switch to HBlank
-                // TODO: Render scanline
+        case PPU_MODE_DRAWING:
+            if (ppu->mode_cycles >= 172) {
+                ppu->mode = PPU_MODE_HBLANK;
+                ppu->mode_cycles -= 172;
+                gb_ppu_render_scanline(ppu);
             }
             break;
             
-        case 0:  // HBlank (204 cycles)
-            if (ppu.cycles >= 204) {
-                ppu.cycles -= 204;
-                ppu.scanline++;
+        case PPU_MODE_HBLANK:
+            if (ppu->mode_cycles >= 204) {
+                ppu->mode_cycles -= 204;
+                ppu->ly++;
                 
-                if (ppu.scanline == 144) {
-                    ppu.mode = 1;  // Switch to VBlank
-                    // TODO: Trigger VBlank interrupt
+                if (ppu->ly >= 144) {
+                    ppu->mode = PPU_MODE_VBLANK;
+                    frame_complete = true;
                 } else {
-                    ppu.mode = 2;  // Next scanline
+                    ppu->mode = PPU_MODE_OAM_SCAN;
                 }
             }
             break;
             
-        case 1:  // VBlank (4560 cycles total for 10 scanlines)
-            if (ppu.cycles >= 456) {
-                ppu.cycles -= 456;
-                ppu.scanline++;
+        case PPU_MODE_VBLANK:
+            if (ppu->mode_cycles >= 456) {
+                ppu->mode_cycles -= 456;
+                ppu->ly++;
                 
-                if (ppu.scanline == 154) {
-                    ppu.scanline = 0;
-                    ppu.mode = 2;  // Back to OAM search
+                if (ppu->ly >= 154) {
+                    ppu->ly = 0;
+                    ppu->mode = PPU_MODE_OAM_SCAN;
                 }
             }
             break;
     }
+    
+    if (frame_complete) {
+        static int frames = 0;
+        if (frames++ % 60 == 0) {
+            printf("PPU Frame Complete (1/60)\n");
+        }
+    }
+    
+    return frame_complete;
 }
 
-/**
- * Render a single scanline
- * TODO: Implement background, window, and sprite rendering
- */
-void ppu_render_scanline(void) {
-    int y = ppu.scanline;
+void gb_ppu_render_scanline(gb_ppu_t *ppu) {
+    /*
+     * PLACEHOLDER: Scanline rendering
+     * 
+     * Full implementation would:
+     * 1. Render background tiles for current scanline
+     * 2. Render window if enabled
+     * 3. Render sprites with priority handling
+     * 4. Apply palette mapping
+     * 5. Write pixels to framebuffer
+     */
     
-    for (int x = 0; x < GB_SCREEN_WIDTH; x++) {
-        // Placeholder: white screen
-        int pixel_index = (y * GB_SCREEN_WIDTH + x) * 4;
-        framebuffer[pixel_index + 0] = 0xE0;  // R
-        framebuffer[pixel_index + 1] = 0xF8;  // G
-        framebuffer[pixel_index + 2] = 0xD0;  // B
-        framebuffer[pixel_index + 3] = 0xFF;  // A
+    u32 y = ppu->ly;
+    if (y >= GB_SCREEN_HEIGHT) return;
+    
+    /* Render background tiles if enabled */
+    if (!(ppu->lcdc & LCDC_ENABLE)) return;
+    if (!(ppu->lcdc & LCDC_BG_ENABLE)) return;
+
+    /* 
+     * Simplified tile rendering logic:
+     * 1. Find the tile map address (0x9800 or 0x9C00)
+     * 2. Find the tile data address (0x8000 or 0x8800)
+     * 3. For each pixel, fetch tile index and pixel color
+     */
+    u16 map_base = (ppu->lcdc & LCDC_BG_TILEMAP) ? 0x1C00 : 0x1800; // Relative to 0x8000
+    u16 tile_base = (ppu->lcdc & LCDC_BG_WIN_TILES) ? 0x0000 : 0x0800;
+
+    u8 ty = (y + ppu->scy) / 8;
+    u8 py = (y + ppu->scy) % 8;
+
+    for (u32 x = 0; x < GB_SCREEN_WIDTH; x++) {
+        u8 tx = (x + ppu->scx) / 8;
+        u8 px = (x + ppu->scx) % 8;
+
+        /* Fetch tile index from map */
+        u16 map_offset = map_base + (ty % 32) * 32 + (tx % 32);
+        u8 tile_index = ppu->vram[map_offset];
+
+        /* Fetch tile data pixels */
+        u16 tile_addr;
+        if (ppu->lcdc & LCDC_BG_WIN_TILES) {
+            tile_addr = tile_base + tile_index * 16 + py * 2;
+        } else {
+            tile_addr = tile_base + (int8_t)tile_index * 16 + py * 2;
+        }
+
+        u8 b1 = ppu->vram[tile_addr];
+        u8 b2 = ppu->vram[tile_addr + 1];
+
+        /* Combine bits for 2-bit color index */
+        u8 bit = 7 - px;
+        u8 color_idx = ((b1 >> bit) & 1) | (((b2 >> bit) & 1) << 1);
+
+        /* Map to palette and write to framebuffer */
+        u8 shade = (ppu->bgp >> (color_idx * 2)) & 3;
+        u32 color = default_palette[shade];
+        
+        u32 fb_idx = (y * GB_SCREEN_WIDTH + x) * 4;
+        ppu->framebuffer[fb_idx + 0] = (color >> 0) & 0xFF;
+        ppu->framebuffer[fb_idx + 1] = (color >> 8) & 0xFF;
+        ppu->framebuffer[fb_idx + 2] = (color >> 16) & 0xFF;
+        ppu->framebuffer[fb_idx + 3] = (color >> 24) & 0xFF;
     }
 }
 
-uint8_t* ppu_get_framebuffer(void) {
-    return framebuffer;
+void gb_ppu_write_vram(gb_ppu_t *ppu, u16 addr, u8 value) {
+    if (addr < 0x2000) {
+        ppu->vram[addr] = value;
+    }
 }
 
-int ppu_get_scanline(void) {
-    return ppu.scanline;
+u8 gb_ppu_read_vram(gb_ppu_t *ppu, u16 addr) {
+    if (addr < 0x2000) {
+        return ppu->vram[addr];
+    }
+    return 0xFF;
 }
 
-// TODO: Implement background rendering
-// TODO: Implement window rendering
-// TODO: Implement sprite rendering
-// TODO: Implement color palette support
+void gb_ppu_write_oam(gb_ppu_t *ppu, u16 addr, u8 value) {
+    if (addr < 0xA0) {
+        ppu->oam[addr] = value;
+    }
+}
+
+u8 gb_ppu_read_oam(gb_ppu_t *ppu, u16 addr) {
+    if (addr < 0xA0) {
+        return ppu->oam[addr];
+    }
+    return 0xFF;
+}

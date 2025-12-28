@@ -10,36 +10,31 @@
 import React from 'react';
 import './Controls.css';
 
-function Controls({ isRunning, onPlayPause, onSave, onLoad, fps }) {
+function Controls({ isRunning, onTogglePlay, onReset, onOpenSave }) {
     return (
         <div className="controls">
             <div className="control-group">
                 <button
-                    className="control-button primary"
-                    onClick={onPlayPause}
+                    className={`control-button primary ${isRunning ? 'running' : 'paused'}`}
+                    onClick={onTogglePlay}
                 >
                     {isRunning ? '⏸️ Pause' : '▶️ Play'}
+                </button>
+                <button
+                    className="control-button"
+                    onClick={onReset}
+                >
+                    🔄 Reset
                 </button>
             </div>
 
             <div className="control-group">
                 <button
-                    className="control-button"
-                    onClick={onSave}
-                    disabled={!isRunning}
+                    className="control-button secondary"
+                    onClick={onOpenSave}
                 >
-                    💾 Save State
+                    💾 Save / Load
                 </button>
-                <button
-                    className="control-button"
-                    onClick={onLoad}
-                >
-                    📂 Load State
-                </button>
-            </div>
-
-            <div className="fps-display">
-                FPS: {fps.toFixed(1)}
             </div>
         </div>
     );

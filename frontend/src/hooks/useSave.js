@@ -58,39 +58,36 @@ const loadFromIndexedDB = async (key) => {
     return result?.data;
 };
 
-export function useSave(wasmInstance, coreType) {
+export function useSave(wasmCore, coreType) {
     /**
      * Save current emulator state
      */
     const saveState = useCallback(async () => {
-        if (!wasmInstance.current) {
-            console.error('WASM instance not initialized');
-            return;
+        if (!wasmCore) {
+            console.error('WASM core not initialized');
+            return null;
         }
 
         try {
-            // TODO: Call WASM save_state()
-            // const stateData = wasmInstance.current.save_state();
-
-            // Placeholder
-            const stateData = new Uint8Array([1, 2, 3, 4]);
-
+            const stateData = wasmCore.save();
             const key = `${coreType}_state`;
             await saveToIndexedDB(key, stateData);
 
             console.log(`State saved for ${coreType}`);
+            return stateData;
         } catch (error) {
             console.error('Failed to save state:', error);
+            throw error;
         }
-    }, [wasmInstance, coreType]);
+    }, [wasmCore, coreType]);
 
     /**
      * Load saved emulator state
      */
-    const loadState = useCallback(async () => {
-        if (!wasmInstance.current) {
-            console.error('WASM instance not initialized');
-            return;
+    const loadSavedState = useCallback(async () => {
+        if (!wasmCore) {
+            console.error('WASM core not initialized');
+            return false;
         }
 
         try {
@@ -99,17 +96,17 @@ export function useSave(wasmInstance, coreType) {
 
             if (!stateData) {
                 console.warn('No saved state found');
-                return;
+                return false;
             }
 
-            // TODO: Call WASM load_state(stateData)
-            // wasmInstance.current.load_state(stateData);
-
-            console.log(`State loaded for ${coreType}`);
+            const success = wasmCore.loadSave(stateData);
+            console.log(`State loaded for ${coreType}: ${success}`);
+            return success;
         } catch (error) {
             console.error('Failed to load state:', error);
+            return false;
         }
-    }, [wasmInstance, coreType]);
+    }, [wasmCore, coreType]);
 
-    return { saveState, loadState };
+    return { saveState, loadSavedState };
 }

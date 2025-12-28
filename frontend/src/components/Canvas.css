@@ -10,13 +10,14 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 100%;
 }
 
 .emulator-canvas {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     width: 100%;
-    max-width: 720px;
+    max-width: 960px;
     height: auto;
     border-radius: 4px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);

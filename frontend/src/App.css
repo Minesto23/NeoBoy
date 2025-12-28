@@ -55,6 +55,16 @@
     max-width: 1200px;
 }
 
+.emulator-container {
+    position: relative;
+    width: 100%;
+    max-width: 960px;
+    background: #000;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    margin-bottom: var(--spacing);
+}
+
 @media (max-width: 768px) {
     .app-header h1 {
         font-size: 2rem;
