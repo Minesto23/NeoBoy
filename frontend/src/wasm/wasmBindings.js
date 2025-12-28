@@ -49,6 +49,8 @@ export class EmulatorCore {
         this.stepFrame = getExport('step_frame');
         this.setButton = getExport('set_button');
         this.getFramebuffer = getExport('get_framebuffer');
+        this.getAudioBufferPtr = getExport('get_audio_buffer');
+        this.getAudioBufferSize = getExport('get_audio_buffer_size');
         this.saveState = getExport('save_state');
         this.loadState = getExport('load_state');
         this.reset = getExport('reset');
@@ -94,8 +96,8 @@ export class EmulatorCore {
         if (!this.initialized) this.initialize();
         if (!this.malloc || !this.free || !this.loadRom) return false;
 
-        this.updateMemoryViews(); // Ensure views are fresh if memory grew
         const romPtr = this.malloc(romData.length);
+        this.updateMemoryViews(); // Ensure views are fresh if memory grew during malloc
         this.HEAPU8.set(romData, romPtr);
 
         const result = this.loadRom(romPtr, romData.length);
@@ -124,6 +126,19 @@ export class EmulatorCore {
         return new ImageData(memory, width, height);
     }
 
+    getAudioSamples() {
+        if (!this.getAudioBufferPtr || !this.getAudioBufferSize) return null;
+
+        const ptr = this.getAudioBufferPtr();
+        const size = this.getAudioBufferSize();
+
+        this.updateMemoryViews();
+        // Return a copy to avoid memory issues with WASM growth
+        // Float32Array because samples are floats
+        const samples = new Float32Array(this.wasm.HEAPF32.buffer, ptr, size);
+        return new Float32Array(samples);
+    }
+
     save() {
         if (!this.saveState || !this.malloc) return null;
 
@@ -142,7 +157,7 @@ export class EmulatorCore {
         if (!this.loadState || !this.malloc) return false;
 
         const bufferPtr = this.malloc(saveData.length);
-        this.updateMemoryViews();
+        this.updateMemoryViews(); // Ensure views are fresh if memory grew during malloc
         this.HEAPU8.set(saveData, bufferPtr);
 
         const result = this.loadState(bufferPtr, saveData.length);

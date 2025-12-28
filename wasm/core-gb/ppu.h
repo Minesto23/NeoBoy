@@ -101,7 +101,7 @@ void gb_ppu_reset(gb_ppu_t *ppu);
  * Step PPU by given number of cycles
  * Returns true if a frame was completed
  */
-bool gb_ppu_step(gb_ppu_t *ppu, u32 cycles);
+bool gb_ppu_step(gb_ppu_t *ppu, void *mmu, u32 cycles);
 
 /**
  * Render a scanline
@@ -127,5 +127,16 @@ void gb_ppu_write_oam(gb_ppu_t *ppu, u16 addr, u8 value);
  * Read from OAM
  */
 u8 gb_ppu_read_oam(gb_ppu_t *ppu, u16 addr);
+
+u8 gb_ppu_read_reg(gb_ppu_t *ppu, u16 addr);
+void gb_ppu_write_reg(gb_ppu_t *ppu, u16 addr, u8 value);
+
+/* STAT bits */
+#define STAT_INTERRUPT_LYC  (1 << 6)
+#define STAT_INTERRUPT_OAM  (1 << 5)
+#define STAT_INTERRUPT_VBL  (1 << 4)
+#define STAT_INTERRUPT_HBL  (1 << 3)
+#define STAT_LYC_EQUAL      (1 << 2)
+#define STAT_MODE_MASK      (0x03)
 
 #endif /* GB_PPU_H */

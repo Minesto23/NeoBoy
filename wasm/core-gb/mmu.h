@@ -23,8 +23,9 @@
 
 #include "../common/common.h"
 
-typedef struct gb_ppu_t gb_ppu_t;
-typedef struct gb_cartridge_t gb_cartridge_t;
+struct gb_ppu_t;
+struct gb_apu_t;
+struct gb_cartridge_t;
 
 typedef struct gb_mmu_t {
     /* Work RAM */
@@ -35,11 +36,21 @@ typedef struct gb_mmu_t {
     u8 io[0x80];
     
     /* Component references */
-    gb_ppu_t *ppu;
-    gb_cartridge_t *cart;
+    struct gb_ppu_t *ppu;
+    struct gb_cartridge_t *cart;
     
     /* Joypad state */
     u8 joypad;
+
+    /* Timer state */
+    u16 div_counter;      /* Internal 16-bit counter for DIV */
+    u32 tima_counter;     /* Internal counter for TIMA */
+
+    /* APU reference */
+    struct gb_apu_t *apu;
+
+    /* Interrupt Enable register (0xFFFF) */
+    u8 ie;
 } gb_mmu_t;
 
 /* I/O Register addresses */
@@ -66,10 +77,17 @@ typedef struct gb_mmu_t {
 #define IO_IE    0xFFFF  /* Interrupt enable */
 
 /* Function prototypes */
-
-void gb_mmu_init(gb_mmu_t *mmu, gb_ppu_t *ppu, gb_cartridge_t *cart);
+void gb_mmu_init(gb_mmu_t *mmu, struct gb_ppu_t *ppu, struct gb_apu_t *apu, struct gb_cartridge_t *cart);
 void gb_mmu_reset(gb_mmu_t *mmu);
 
+/**
+ * Step timers by given number of cycles
+ */
+void gb_mmu_step_timers(gb_mmu_t *mmu, u32 cycles);
+
+/**
+ * Read a byte from memory
+ */
 u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr);
 void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value);
 

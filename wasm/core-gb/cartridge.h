@@ -48,6 +48,15 @@ typedef struct gb_cartridge_t {
     /* MBC1 specific */
     u8 banking_mode;      /* 0: ROM banking, 1: RAM banking */
     
+    /* MBC3 RTC specific */
+    u8 rtc_regs[5];       /* RTC registers: S, M, H, DL, DH */
+    u8 rtc_latch[5];      /* Latched RTC values */
+    bool rtc_latched;     /* RTC latch flag */
+    u64 rtc_base_time;    /* Base time for RTC emulation */
+
+    /* MBC5 specific */
+    u16 rom_bank_9bit;    /* MBC5 uses 9 bits for ROM banking */
+
     /* Cartridge info */
     char title[17];       /* Game title (null-terminated) */
 } gb_cartridge_t;

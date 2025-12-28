@@ -32,18 +32,24 @@ const initDB = () => {
 /**
  * Save data to IndexedDB
  */
+/**
+ * Save data to IndexedDB
+ */
 const saveToIndexedDB = async (key, data) => {
     const db = await initDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.put({
+            id: key,
+            data: data,
+            timestamp: Date.now()
+        });
 
-    await store.put({
-        id: key,
-        data: data,
-        timestamp: Date.now()
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        tx.oncomplete = () => resolve();
     });
-
-    await tx.complete;
 };
 
 /**
@@ -51,11 +57,16 @@ const saveToIndexedDB = async (key, data) => {
  */
 const loadFromIndexedDB = async (key) => {
     const db = await initDB();
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.get(key);
 
-    const result = await store.get(key);
-    return result?.data;
+        request.onsuccess = () => {
+            resolve(request.result?.data);
+        };
+        request.onerror = () => reject(request.error);
+    });
 };
 
 export function useSave(wasmCore, coreType) {

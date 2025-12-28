@@ -25,7 +25,7 @@ GBC_SOURCES = $(GBC_DIR)/cpu.c $(GBC_DIR)/mmu.c $(GBC_DIR)/ppu.c $(GBC_DIR)/apu.
 GBA_SOURCES = $(GBA_DIR)/cpu.c $(GBA_DIR)/mmu.c $(GBA_DIR)/ppu.c $(GBA_DIR)/apu.c $(GBA_DIR)/dma.c $(GBA_DIR)/cartridge.c $(GBA_DIR)/gba.c
 
 # Exported functions (keep _ prefix for EMCC)
-GB_EXPORTS = ["_malloc","_free","_gb_init","_gb_load_rom","_gb_step_frame","_gb_set_button","_gb_get_framebuffer","_gb_save_state","_gb_load_state","_gb_reset","_gb_destroy"]
+GB_EXPORTS = ["_malloc","_free","_gb_init","_gb_load_rom","_gb_step_frame","_gb_set_button","_gb_get_framebuffer","_gb_get_audio_buffer","_gb_get_audio_buffer_size","_gb_save_state","_gb_load_state","_gb_reset","_gb_destroy"]
 GBC_EXPORTS = ["_malloc","_free","_gbc_init","_gbc_load_rom","_gbc_step_frame","_gbc_set_button","_gbc_get_framebuffer","_gbc_save_state","_gbc_load_state","_gbc_reset","_gbc_destroy"]
 GBA_EXPORTS = ["_malloc","_free","_gba_init","_gba_load_rom","_gba_step_frame","_gba_set_button","_gba_get_framebuffer","_gba_save_state","_gba_load_state","_gba_reset","_gba_destroy"]
 

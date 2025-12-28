@@ -33,6 +33,7 @@ typedef struct gb_cpu_t {
     
     /* CPU state */
     bool ime;     /* Interrupt Master Enable */
+    bool ei_delay; /* EI delay flag (enables IME after next instruction) */
     bool halted;  /* CPU halted state */
     bool stopped; /* CPU stopped state */
     
@@ -89,6 +90,6 @@ u32 gb_cpu_step(gb_cpu_t *cpu, void *mmu);
  * Handle interrupts
  * Checks interrupt flags and executes interrupt service routine if needed
  */
-void gb_cpu_handle_interrupts(gb_cpu_t *cpu, void *mmu);
+u32 gb_cpu_handle_interrupts(gb_cpu_t *cpu, void *mmu);
 
 #endif /* GB_CPU_H */

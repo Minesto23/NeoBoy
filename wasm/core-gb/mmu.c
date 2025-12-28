@@ -6,12 +6,16 @@
 
 #include "mmu.h"
 #include "ppu.h"
+#include "apu.h"
 #include "cartridge.h"
+#include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
-void gb_mmu_init(gb_mmu_t *mmu, gb_ppu_t *ppu, gb_cartridge_t *cart) {
+void gb_mmu_init(gb_mmu_t *mmu, gb_ppu_t *ppu, gb_apu_t *apu, gb_cartridge_t *cart) {
     memset(mmu, 0, sizeof(gb_mmu_t));
     mmu->ppu = ppu;
+    mmu->apu = apu;
     mmu->cart = cart;
     mmu->joypad = 0xFF;
 }
@@ -21,6 +25,42 @@ void gb_mmu_reset(gb_mmu_t *mmu) {
     memset(mmu->hram, 0, sizeof(mmu->hram));
     memset(mmu->io, 0, sizeof(mmu->io));
     mmu->joypad = 0xFF;
+}
+
+static void request_interrupt(gb_mmu_t *mmu, u8 interrupt) {
+    u8 if_reg = gb_mmu_read(mmu, 0xFF0F);
+    gb_mmu_write(mmu, 0xFF0F, if_reg | interrupt);
+}
+
+void gb_mmu_step_timers(gb_mmu_t *mmu, u32 cycles) {
+    /* DIV is always incremented at 16384Hz (every 256 cycles) */
+    u16 old_div = mmu->div_counter;
+    mmu->div_counter += cycles;
+    mmu->io[IO_DIV - 0xFF00] = (u8)(mmu->div_counter >> 8);
+
+    /* TIMA (Timer Counter) */
+    u8 tac = mmu->io[IO_TAC - 0xFF00];
+    if (tac & 0x04) { /* Timer enabled */
+        u32 threshold = 0;
+        switch (tac & 0x03) {
+            case 0: threshold = 1024; break; /* 4096 Hz */
+            case 1: threshold = 16;   break; /* 262144 Hz */
+            case 2: threshold = 64;   break; /* 65536 Hz */
+            case 3: threshold = 256;  break; /* 16384 Hz */
+        }
+
+        mmu->tima_counter += cycles;
+        while (mmu->tima_counter >= threshold) {
+            mmu->tima_counter -= threshold;
+            if (mmu->io[IO_TIMA - 0xFF00] == 0xFF) {
+                /* Overflow: set TIMA to TMA and request interrupt */
+                mmu->io[IO_TIMA - 0xFF00] = mmu->io[IO_TMA - 0xFF00];
+                request_interrupt(mmu, 0x04); /* Timer interrupt */
+            } else {
+                mmu->io[IO_TIMA - 0xFF00]++;
+            }
+        }
+    }
 }
 
 u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr) {
@@ -61,6 +101,23 @@ u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr) {
     
     /* I/O Registers */
     if (addr >= 0xFF00 && addr < 0xFF80) {
+        if (addr == 0xFF00) {
+            u8 val = mmu->io[0x00] & 0xF0;
+            if (!(val & 0x10)) { /* Direction buttons */
+                val |= (mmu->joypad >> 4) & 0x0F;
+            }
+            if (!(val & 0x20)) { /* Action buttons */
+                val |= (mmu->joypad & 0x0F);
+            }
+            return val;
+        }
+
+        if (addr >= 0xFF10 && addr < 0xFF40) {
+            return gb_apu_read(mmu->apu, addr);
+        }
+        if (addr >= 0xFF40 && addr <= 0xFF4B) {
+            return gb_ppu_read_reg(mmu->ppu, addr);
+        }
         return mmu->io[addr - 0xFF00];
     }
     
@@ -71,7 +128,7 @@ u8 gb_mmu_read(gb_mmu_t *mmu, u16 addr) {
     
     /* Interrupt Enable */
     if (addr == 0xFFFF) {
-        return mmu->io[0x7F];
+        return mmu->ie;
     }
     
     return 0xFF;
@@ -116,6 +173,40 @@ void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value) {
     
     /* I/O Registers */
     if (addr >= 0xFF00 && addr < 0xFF80) {
+        if (addr == IO_DIV) {
+            mmu->div_counter = 0;
+            mmu->io[0x04] = 0;
+            return;
+        }
+        
+        if (addr == IO_SC) {
+            if (value == 0x81) {
+                printf("%c", mmu->io[IO_SB - 0xFF00]);
+                fflush(stdout);
+                mmu->io[IO_SC - 0xFF00] = 0x01; /* Reset transfer bit */
+                return;
+            }
+        }
+        
+        /* Route APU registers (0xFF10-0xFF3F) */
+        if (addr >= 0xFF10 && addr < 0xFF40) {
+            gb_apu_write(mmu->apu, addr, value);
+            return;
+        }
+
+        /* Route PPU registers (0xFF40-0xFF4B) */
+        if (addr >= 0xFF40 && addr <= 0xFF4B) {
+            if (addr == 0xFF46) { /* DMA */
+                u16 source = value << 8;
+                for (int i = 0; i < 0xA0; i++) {
+                    gb_mmu_write(mmu, 0xFE00 + i, gb_mmu_read(mmu, source + i));
+                }
+            } else {
+                gb_ppu_write_reg(mmu->ppu, addr, value);
+            }
+            return;
+        }
+
         mmu->io[addr - 0xFF00] = value;
         return;
     }
@@ -128,7 +219,7 @@ void gb_mmu_write(gb_mmu_t *mmu, u16 addr, u8 value) {
     
     /* Interrupt Enable */
     if (addr == 0xFFFF) {
-        mmu->io[0x7F] = value;
+        mmu->ie = value;
         return;
     }
 }

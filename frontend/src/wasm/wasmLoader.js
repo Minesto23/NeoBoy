@@ -19,12 +19,12 @@ export async function loadWASMCore(coreName) {
             case 'gb':
                 loadModule = (await import('./generated/gb.js')).default;
                 break;
-            case 'gbc':
-                loadModule = (await import('./generated/gbc.js')).default;
-                break;
-            case 'gba':
-                loadModule = (await import('./generated/gba.js')).default;
-                break;
+            // case 'gbc':
+            //     loadModule = (await import('./generated/gbc.js')).default;
+            //     break;
+            // case 'gba':
+            //     loadModule = (await import('./generated/gba.js')).default;
+            //     break;
             default:
                 throw new Error(`Unknown core: ${coreName}`);
         }
